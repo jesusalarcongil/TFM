@@ -1,0 +1,65 @@
+library(scanMiR)
+library(rtracklayer)
+library(dplyr)
+library(stringr)
+library(NLP)
+library(Biostrings)
+library(rtracklayer)
+
+# Preparar las secuencias y la lista de los mirna
+sequencesMir = read.delim("D:/TFM/Resultados/results/mnm2_sRNA.sequences", header=FALSE)
+mir2analyze = read.delim("D:/Resultados/mirna/lista_mirna_analizar.csv", header=TRUE, sep = ",")
+mir2analyze = mir2analyze[,2]
+
+rows2remove = c()
+for (i in 1:1:nrow(sequencesMir)){
+  if (grepl(c("loop"), sequencesMir[i,1]) == TRUE) { rows2remove = c(rows2remove, i)}
+  if (grepl(c("pri"), sequencesMir[i,1]) == TRUE) {rows2remove = c(rows2remove, i)}
+  if (grepl(c("moR"), sequencesMir[i,1]) == TRUE) {rows2remove = c(rows2remove, i)}
+}
+sequencesMir = sequencesMir[-rows2remove,]
+for (x in 1:1:nrow(sequencesMir)){
+  sequencesMir[x,1] = gsub("\\*","", sequencesMir[x,1])
+}
+
+# Transformar las secuencias a ARN
+for (i in 1:1:nrow(sequencesMir)){
+  secuenciaDNA = unlist(strsplit(sequencesMir[i,2],""))
+  for (x in 1:1:length(secuenciaDNA)){
+    if (secuenciaDNA[x]== "A") {secuenciaDNA[x] = "U"}
+    else if (secuenciaDNA[x]== "T") {secuenciaDNA[x] = "A"}
+    else if (secuenciaDNA[x]== "C") {secuenciaDNA[x] = "G"}
+    else if (secuenciaDNA[x]== "G") {secuenciaDNA[x] = "C"}
+    else if (secuenciaDNA[x]== "a") {secuenciaDNA[x] = "U"}
+    else if (secuenciaDNA[x]== "t") {secuenciaDNA[x] = "A"}
+    else if (secuenciaDNA[x]== "c") {secuenciaDNA[x] = "G"}
+    else if (secuenciaDNA[x]== "g") {secuenciaDNA[x] = "C"}
+  }
+  secuenciaDNA = rev(secuenciaDNA)
+  secuenciaDNA = paste(secuenciaDNA, collapse="")
+  sequencesMir[i,2] = secuenciaDNA
+}
+
+# Copiar las secuencias de los mirnas y filtrar
+mir2analyze = data.frame(mir2analyze)
+for (i in 1:1:nrow(mir2analyze)){
+  for (x in 1:1:nrow(sequencesMir)){
+    if (grepl(mir2analyze[i,1], sequencesMir[x,1]) == TRUE){
+      mir2analyze[i,2] = sequencesMir[x,2]
+}}}
+for (x in 1:1:nrow(mir2analyze)){
+  mir2analyze[x,1] = gsub("\\*","", mir2analyze[x,1])
+}
+
+# Preparar las secuencias de los genes y encontrar las predicciones
+sequencesDNA = readDNAStringSet(file = "D:/TFM/Datos/dnamensajeros.fasta")
+resultsmirna2mrna = list()
+namesresultsmirna2mrna = c()
+for (i in 1:1:nrow(mir2analyze)){
+  newResult = findSeedMatches(sequencesDNA,mir2analyze[i,2],
+                  onlyCanonical = TRUE, ret = "data.frame", p3.extra = FALSE)
+  resultsmirna2mrna = append(resultsmirna2mrna, list(newResult))
+  namesresultsmirna2mrna = c(namesresultsmirna2mrna, mir2analyze[i,1])
+}
+
+names(resultsmirna2mrna) = namesresultsmirna2mrna
