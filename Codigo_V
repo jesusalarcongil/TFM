@@ -1,0 +1,128 @@
+library(SummarizedExperiment)
+library(DESeq2)
+library(vsn)
+library(fission)
+library(pheatmap)
+library(RColorBrewer)
+library(PoiClaClu)
+library(glmpca)
+library(ggplot2)
+library(genefilter)
+library(magrittr)
+
+# Importación de los datos a analizar y de los datos de las muestras
+mirData = read.delim("D:/TFM/Resultados/results/raw_data.txt", row.names=1)
+samplesData = read.delim("D:/TFM/Resultados/results/samplesData.txt", row.names=1)
+samplesData$stage = factor(samplesData$stage)
+
+# Eliminar los precursores y los loop
+rows2remove = c()
+for (i in 1:1:nrow(mirData)){
+  if (grepl(c("pri"), rownames(mirData[i,])) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("new-loop"), rownames(mirData[i,])) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("putative_new-miR"), rownames(mirData[i,])) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("putative_new-moR"), rownames(mirData[i,])) == TRUE){
+    rows2remove = c(rows2remove, i)
+}}
+mirData = mirData[-rows2remove,]
+
+# Creación del objeto DESeq
+dataStage = DESeqDataSetFromMatrix(countData = mirData, colData = samplesData, design = ~ stage)
+
+# Filtrado de las muestras
+message("El número original es ", nrow(dataStage))
+filtroCount = rowSums(counts(dataStage)) > 220
+dataStage = dataStage[filtroCount,]
+message("El número original es ", nrow(dataStage))
+
+# Transformación de los resultados para su visualización
+dataStage = estimateSizeFactors(dataStage)
+nanotaciones = sum(rowMeans(counts(dataStage, normalized=TRUE)) > 5)
+dataStageT = vst(dataStage, blind = FALSE, nsub = nanotaciones)
+
+# Obtención del gráfico de distancias, heatmap por clusteres y de PCA
+genesHM = head(order(rowVars(assay(dataStageT)), decreasing = TRUE),nanotaciones)
+dataHM  = assay(dataStageT)[genesHM,]
+dataHM  = dataHM - rowMeans(dataHM)
+tiff("D:/Resultados/heatmap_mirs_distancias.tiff", width = 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataHM, cutree_cols = 6, fontsize_row =1,  fontsize_col =8)
+dev.off()
+tiff("D:/Resultados/heatmap_mirs_clusteres.tiff", width = 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataHM, kmeans_k = 4, cutree_cols = 6, fontsize_row =8,  fontsize_col =8)
+dev.off()
+
+dataGPCA = glmpca(assay(dataStage),L=2)
+dataGPCA.dat = dataGPCA$factors
+dataGPCA.dat$stage = dataStage$stage
+tiff("D:/Resultados/gpca_mirs.tiff", width = 8, height = 4, units = 'in', res = 2000)
+ggplot(dataGPCA.dat, aes(x = dim1, y = dim2, color = stage)) + geom_point(size =3) + coord_fixed()
+dev.off()
+# Realizar el análisis de enriquecimiento y obtener las diferencias significativas
+samplesGroup = c("NFE", "ED0", "ED1", "ED2", "ED6", "ED13", "N1", "N3", "N5", "N6", "Adult")
+analisisStage = DESeq(dataStage)
+for (i in 1:1:length(samplesGroup)){
+  for (x in 1:1:length(samplesGroup)){
+    if (samplesGroup[i] != samplesGroup[x]){
+      eval(parse(text=sprintf("resultsStage%s%s = results(analisisStage, 
+                            contrast = c('stage', '%s', '%s'))", 
+                            samplesGroup[i], samplesGroup[x], samplesGroup[i], 
+                            samplesGroup[x])))
+    }
+    else{next()}
+}}
+
+# Obtener el resumen de los datos de significancia
+enrT = array(1, dim = c(length(samplesGroup),length(samplesGroup), nrow(dataStage)),
+      dimnames = list(samplesGroup, samplesGroup, rownames(dataStage)))
+for (i in 1:1:length(samplesGroup)){
+  for (x in 1:1:length(samplesGroup)){
+    if (samplesGroup[i] != samplesGroup[x]){
+      for (z in 1:1:nrow(dataStage)){
+        eval(parse(text=sprintf("enrT[samplesGroup[i], samplesGroup[x],
+rownames(dataStage)[z]] =  resultsStage%s%s[rownames(dataStage)[z],]$padj",  
+samplesGroup[i], samplesGroup[x])))
+      }
+    }
+    else{next()}
+}}
+
+# Obtener los elementos significativos
+enrTS = array(0, dim = c(length(samplesGroup),length(samplesGroup), nrow(dataStage)),
+             dimnames = list(samplesGroup, samplesGroup, rownames(dataStage)))
+for (i in 1:1:length(samplesGroup)){
+  for (x in 1:1:length(samplesGroup)){
+    if (samplesGroup[i] != samplesGroup[x]){
+      for (z in 1:1:nrow(dataStage)){
+        eval(parse(text=sprintf("if (is.na(resultsStage%s%s[rownames(dataStage)[z],]$padj)){next()}", 
+                                samplesGroup[i], samplesGroup[x])))
+        eval(parse(text=sprintf("if (resultsStage%s%s[rownames(dataStage)[z],]$padj<=0.001){enrTS[samplesGroup[i], samplesGroup[x], rownames(dataStage)[z]] = 1}", 
+                                samplesGroup[i], samplesGroup[x])))
+      }
+    }
+    else{next()}
+}}
+
+sumEnrTS = rowSums(enrTS, dims = 2)
+rows2remove = c()
+for (i in 1:1:dim(enrTS)[3]){
+  total = sum(enrTS[,,12])
+  if (total < 11){
+    rows2remove = c(rows2remove, i)
+}}
+
+mir2analyze = dimnames(enrTS)[[3]]
+
+# Filtrar mirnas data por counts
+rows2remove2 = c()
+for (i in 1:1:nrow(mirData)){
+  if(sum(mirData[i,2:22]) < 220){
+    rows2remove2 = c(rows2remove2, i)
+}}
+
+mirnaData = mirData[-rows2remove2,]
