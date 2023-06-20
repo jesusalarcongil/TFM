@@ -1,0 +1,214 @@
+# Realizar el análisis de enriquecimiento de la regulación de los mRNA por isomiRNA y miRNA
+library(SummarizedExperiment)
+library(DESeq2)
+library(vsn)
+library(fission)
+library(pheatmap)
+library(RColorBrewer)
+library(PoiClaClu)
+library(glmpca)
+library(ggplot2)
+library(genefilter)
+library(magrittr)
+library(GO.db)
+library(readr)
+library(stringr)
+library(clusterProfiler)
+library(biodbExpasy)
+
+tablacuentasmirnagen = read.csv("D:/Resultados/tabla_cuentas_mirna_gen.csv")
+rownames(tablacuentasmirnagen) = tablacuentasmirnagen[,1]
+tablacuentasmirnagen = tablacuentasmirnagen[,-1]
+
+tablacuentasisomirnagen = read.csv("D:/Resultados/tabla_cuentas_isomirna_gen.csv")
+rownames(tablacuentasisomirnagen) = tablacuentasisomirnagen[,1]
+tablacuentasisomirnagen = tablacuentasisomirnagen[,-1]
+
+tablacuentastotal = read.csv("D:/Resultados/tabla_cuentas_mirna_isomirna_gen.csv")
+rownames(tablacuentastotal) = tablacuentastotal[,1]
+tablacuentastotal = tablacuentastotal[,-1]
+
+samplesData = read.delim("D:/TFM/Resultados/results/samplesData.txt", row.names=1)
+samplesData$stage = factor(samplesData$stage)
+
+for (i in 1:length(rownames(tablacuentasmirnagen))){
+  rownames(tablacuentasmirnagen)[i] = unlist(strsplit(rownames(tablacuentasmirnagen)[i]," "))[1]
+}
+for (i in 1:length(rownames(tablacuentasisomirnagen))){
+  rownames(tablacuentasisomirnagen)[i] = unlist(strsplit(rownames(tablacuentasisomirnagen)[i]," "))[1]
+}
+for (i in 1:length(rownames(tablacuentastotal))){
+  rownames(tablacuentastotal)[i] = unlist(strsplit(rownames(tablacuentastotal)[i]," "))[1]
+}
+
+dataStageMir = DESeqDataSetFromMatrix(countData = tablacuentasmirnagen, 
+                                                    colData = samplesData, design = ~ stage)
+dataStageIsoMir = DESeqDataSetFromMatrix(countData = tablacuentasisomirnagen,
+                                                    colData = samplesData, design = ~ stage)
+dataStageTotal = DESeqDataSetFromMatrix(countData = tablacuentastotal,
+                                                    colData = samplesData, design = ~ stage)
+
+dataStageMir = estimateSizeFactors(dataStageMir)
+nanotacionesMir = sum(rowMeans(counts(dataStageMir, normalized=TRUE)) > 5)
+dataStageMirT = vst(dataStageMir, blind = FALSE, nsub = nanotacionesMir)
+
+dataStageIsoMir = estimateSizeFactors(dataStageIsoMir)
+nanotacionesIsoMir = sum(rowMeans(counts(dataStageIsoMir, normalized=TRUE)) > 5)
+dataStageIsoMirT = vst(dataStageIsoMir, blind = FALSE, nsub = nanotacionesIsoMir)
+
+dataStageTotal = estimateSizeFactors(dataStageTotal)
+nanotacionesTotal = sum(rowMeans(counts(dataStageTotal, normalized=TRUE)) > 5)
+dataStageTotalT = vst(dataStageTotal, blind = FALSE, nsub = nanotacionesTotal)
+
+
+genesMirHM = head(order(rowVars(assay(dataStageMirT)), decreasing = TRUE),nanotacionesMir)
+dataMirHM  = assay(dataStageMirT)[genesMirHM,]
+dataMirHM  = dataMirHM - rowMeans(dataMirHM)
+tiff("D:/Resultados/heatmap_mirs_mrnas_cuentas.tiff", width = 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataMirHM, cutree_cols = 6, fontsize_col =8, fontsize_row = 10, show_rownames = FALSE, treeheight_row = 0)
+dev.off()
+tiff("D:/Resultados/heatmap_mirs_mrnas_cuentas_cluster.tiff", width = 8, height = 4, units= 'in', res = 2000)
+pheatmap(dataMirHM, cutree_cols = 6, kmeans_k = 4, fontsize_col =8, fontsize_row = 10)
+dev.off()
+
+genesIsoMirHM=head(order(rowVars(assay(dataStageIsoMirT)), decreasing = TRUE),nanotacionesIsoMir)
+dataIsoMirHM  = assay(dataStageIsoMirT)[genesIsoMirHM,]
+dataIsoMirHM  = dataIsoMirHM - rowMeans(dataIsoMirHM)
+tiff("D:/Resultados/heatmap_isomirs_mrnas_cuentas.tiff", width = 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataIsoMirHM, cutree_cols = 6, fontsize_col =8, fontsize_row = 10, show_rownames = FALSE, treeheight_row = 0)
+dev.off()
+tiff("D:/Resultados/heatmap_isomirs_mrnas_cuentas_cluster.tiff", width=8, height=4, units='in', res = 2000)
+pheatmap(dataIsoMirHM, cutree_cols = 5, kmeans_k = 4, fontsize_col =8, fontsize_row = 10)
+dev.off()
+
+genesTotal = head(order(rowVars(assay(dataStageTotalT)), decreasing = TRUE),nanotacionesTotal)
+dataTotalHM  = assay(dataStageTotalT)[genesTotal,]
+dataTotalHM  = dataIsoMirHM - rowMeans(dataTotalHM)
+tiff("D:/Resultados/heatmap_total_mrnas_cuentas.tiff", width = 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataTotalHM, cutree_cols = 6, fontsize_col =8, fontsize_row = 10, show_rownames = FALSE, treeheight_row = 0)
+dev.off()
+tiff("D:/Resultados/heatmap_total_mrnas_cuentas_cluster.tiff", width= 8, height = 4, units = 'in', res = 2000)
+pheatmap(dataTotalHM, cutree_cols = 5, kmeans_k = 6, fontsize_col =8, fontsize_row = 10)
+dev.off()
+
+samplesGroup = c("NFE", "ED0", "ED1", "ED2", "ED6", "ED13", "N1", "N3", "N5", "N6", "Adult")
+samplesGroupContrast = c("ED0", "ED1", "ED2", "ED6", "ED13", "N1", "N3", "N5", "N6", "Adult")
+
+analisisStageMir = DESeq(dataStageMir)
+for (i in 1:1:length(samplesGroupContrast)){
+    eval(parse(text=sprintf("resultsMirnaStage%sNFE = results(analisisStageMir, 
+                            contrast = c('stage', '%s', 'NFE'))", samplesGroupContrast[i], samplesGroupContrast[i])))
+}
+
+analisisStageIsomir = DESeq(dataStageIsoMir)
+for (i in 1:1:length(samplesGroupContrast)){
+  eval(parse(text=sprintf("resultsIsoMirnaStage%sNFE = results(analisisStageIsomir, 
+                            contrast = c('stage', '%s', 'NFE'))", samplesGroupContrast[i], samplesGroupContrast[i])))
+}
+
+analisisStageTotal = DESeq(dataStageTotal)
+for (i in 1:1:length(samplesGroupContrast)){
+  eval(parse(text=sprintf("resultsTotalStage%sNFE = results(analisisStageTotal, 
+                            contrast = c('stage', '%s', 'NFE'))", samplesGroupContrast[i], samplesGroupContrast[i])))
+}
+
+# Obtener el resumen de los datos de significancia
+listaGenes = rownames(tablacuentasmirnagen)
+tablacuentasmirnagen = cbind(listaGenes,tablacuentasmirnagen)
+rownames(tablacuentasmirnagen) = c()
+
+listaGenes = rownames(tablacuentasisomirnagen)
+tablacuentasisomirnagen = cbind(listaGenes,tablacuentasisomirnagen)
+rownames(tablacuentasisomirnagen) = c()
+
+listaGenes = rownames(tablacuentastotal)
+tablacuentastotal = cbind(listaGenes,tablacuentastotal)
+rownames(tablacuentastotal) = c()
+
+mirnaFC = array(0, dim = c(nrow(tablacuentasmirnagen)*10,3))
+isomirnaFC = array(0, dim = c(nrow(tablacuentasisomirnagen)*10,3))
+totalFC = array(0, dim = c(nrow(tablacuentastotal)*10,3))
+
+z=1
+for (x in 1:length(listaGenes)){
+  for (i in 1:length(samplesGroupContrast)){
+    eval(parse(text=sprintf("mirnaFC[z,1]= rownames(resultsMirnaStage%sNFE
+                                          [tablacuentasmirnagen[x,1],])", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("mirnaFC[z, 2] = resultsMirnaStage%sNFE
+                                          [tablacuentasmirnagen[x,1],]$log2FoldChange", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("mirnaFC[z, 3] = '%s'", samplesGroupContrast[i])))
+    z=z+1
+}}
+z=1
+for (x in 1:length(listaGenes)){
+  for (i in 1:length(samplesGroupContrast)){
+    eval(parse(text=sprintf("isomirnaFC[z, 1] = rownames(resultsIsoMirnaStage%sNFE
+                                         [tablacuentasisomirnagen[x,1],])", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("isomirnaFC[z, 2] = resultsIsoMirnaStage%sNFE
+                                         [tablacuentasisomirnagen[x,1],]$log2FoldChange", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("isomirnaFC[z, 3] = '%s'", samplesGroupContrast[i])))
+    z=z+1
+}}
+z=1
+for (x in 1:length(listaGenes)){
+  for (i in 1:length(samplesGroupContrast)){
+    eval(parse(text=sprintf("totalFC[z, 1] = rownames(resultsTotalStage%sNFE
+                                          [tablacuentastotal[x,1],])", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("totalFC[z, 2] = resultsTotalStage%sNFE
+                                          [tablacuentastotal[x,1],]$log2FoldChange", samplesGroupContrast[i])))
+    eval(parse(text=sprintf("totalFC[z, 3] = '%s'", samplesGroupContrast[i])))
+    z=z+1
+}}
+
+isomirnaFC = data.frame(isomirnaFC)
+mirnaFC = data.frame(mirnaFC)
+totalFC = data.frame(totalFC)
+colnames(isomirnaFC) = c("Gene_ID", "FC", "stage")
+colnames(mirnaFC) = c("Gene_ID", "FC", "stage")
+colnames(totalFC) = c("Gene_ID", "FC", "stage")
+isomirnaFC$FC = as.numeric(isomirnaFC$FC)
+mirnaFC$FC = as.numeric(mirnaFC$FC)
+totalFC$FC = as.numeric(totalFC$FC)
+
+# Análisis de enriquecimiento funcional
+totalTerminosGO = Term(GOTERM)
+terminosGO = data.frame("GO_ID"=names(totalTerminosGO),"GO_term"=totalTerminosGO)
+rownames(terminosGO) = c()
+anotacionesGO = read_delim("D:/blast2go_filtered.annot", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names = FALSE)
+universoGenes = read_delim("D:/blast2go.annot", delim = "\t", escape_double = FALSE, trim_ws = TRUE, col_names = FALSE)
+anotacionesGO = anotacionesGO[,c(1,2)]
+anotacionesGO = cbind(anotacionesGO[,2],anotacionesGO[,1])
+colnames(anotacionesGO) = c("GO_ID", "GENE")
+row2remove = c()
+for (i in 1:nrow(anotacionesGO)){
+  if (startsWith(anotacionesGO[i,1], "EC") == TRUE){
+    row2remove = c(row2remove, i)
+  }
+}
+anotacionesGO = anotacionesGO[-row2remove,]
+
+mirnaFC = mirnaFC[abs(mirnaFC$FC)>1,]
+mirnaFC$regulacion = "up"
+mirnaFC$regulacion[mirnaFC$FC < 0] = "down"
+isomirnaFC = isomirnaFC[abs(isomirnaFC$FC)>1,]
+isomirnaFC$regulacion = "up"
+isomirnaFC$regulacion[isomirnaFC$FC < 0] = "down"
+
+totalFC = totalFC[abs(totalFC$FC)>1,]
+totalFC$regulacion = "up"
+totalFC$regulacion[totalFC$FC < 0] = "down"
+
+clusteresmirna = compareCluster(Gene_ID~stage+regulacion, data=mirnaFC, fun="enricher", TERM2GENE=anotacionesGO, TERM2NAME=terminosGO, universe = universoGenes[,1], pvalueCutoff = 0.1,pAdjustMethod = "fdr", minGSSize = 11,maxGSSize = 500, qvalueCutoff = 0.1)
+tiff("D:/Resultados/dotplot_mirna_NFE.tiff", width = 8, height = 8, units = 'in', res = 2000)
+dotplot(clusteresmirna, x = "stage", font.size = 6, showCategory= 100) + facet_grid(~regulacion)
+dev.off()
+
+clusteresisomirna = compareCluster(Gene_ID~stage+regulacion, data=isomirnaFC, fun="enricher", TERM2GENE=anotacionesGO, TERM2NAME=terminosGO, universe = universoGenes[,1], pvalueCutoff = 0.1,pAdjustMethod = "fdr", minGSSize = 11,maxGSSize = 500, qvalueCutoff = 0.1)
+tiff("D:/Resultados/dotplot_isomirna_NFE.tiff", width = 8, height = 8, units = 'in', res = 2000)
+dotplot(clusteresisomirna, x="stage", font.size = 6, showCategory= 100) + facet_grid(~regulacion)
+dev.off()
+
+clusterestotal = compareCluster(Gene_ID~stage+regulacion, data=totalFC, fun="enricher", TERM2GENE=anotacionesGO, TERM2NAME=terminosGO, universe = universoGenes[,1], pvalueCutoff = 0.1,pAdjustMethod = "fdr", minGSSize = 11,maxGSSize = 500, qvalueCutoff = 0.1)
+tiff("D:/Resultados/dotplot_total_NFE.tiff", width = 8, height = 8, units = 'in', res = 2000)
+dotplot(clusterestotal, x="stage", font.size = 6, showCategory= 100) + facet_grid(~regulacion)
+dev.off()
