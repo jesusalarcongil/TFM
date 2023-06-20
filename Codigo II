@@ -1,0 +1,61 @@
+# Importar las librerias necesarias
+library(rtracklayer)
+library(dplyr)
+library(stringr)
+library(NLP)
+
+# Importar el archivo .bed, convertirlo en .gff e importarlo
+mirgeneDBBedGFF3 = import.bed("bge.bed")
+export.gff(mirgeneDBBedGFF3, "bge.gff", format = "GFF3")
+mirgeneDBBedGFF3 = import.gff3('bge.gff')
+
+# Eliminar las secuencias no  necesarias, manteniendo las secuencias pri y maduras
+rows2remove = c()
+for (i in 1:1:length(mirgeneDBBedGFF3$name)){
+  if (grepl(c("_pri_5p"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("_pri_3p"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("_motif"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("_pre"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("_seed"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+  if (grepl(c("_loop"), mirgeneDBBedGFF3$name[i]) == TRUE){
+    rows2remove = c(rows2remove, i)
+  }
+}
+mirgeneDBBedGFF3 = mirgeneDBBedGFF3[-rows2remove,]
+
+# Cambiar el formato de miRGeneDB al formato miRBase
+mirgeneDBBedGFF3$type = as.character(mirgeneDBBedGFF3$type)
+mirgeneDBBedGFF3_filtered_df = as.data.frame(mirgeneDBBedGFF3)
+colnames(mirgeneDBBedGFF3_filtered_df) = c("seqnames", "start","end","width",
+                                           "strand","source","type","score", "phase","ID")
+
+# Cambiar la nomenclatura de miRGeneBD al formato miRBase
+for (i in 1:1:length(mirgeneDBBedGFF3_filtered_df$ID)){
+  if (grepl(c("pri"), mirgeneDBBedGFF3_filtered_df$ID[i]) == TRUE){
+    mirgeneDBBedGFF3_filtered_df$type[i] = "miRNA_primary_transcript"
+    mirgeneDBBedGFF3_filtered_df$ID[i] = as.String(paste(
+      mirgeneDBBedGFF3_filtered_df$ID[i], ";Name=", 
+      mirgeneDBBedGFF3_filtered_df$ID[i], sep = ""))
+  } else {
+    mirgeneDBBedGFF3_filtered_df$type[i] = "miRNA"
+    precursor_miRNA = str_split_i(mirgeneDBBedGFF3_filtered_df$ID[i], "_", 1)
+    precursor_miRNA = paste(precursor_miRNA, "_pri", sep = "")
+    mirgeneDBBedGFF3_filtered_df$ID[i] = as.String(paste(
+      mirgeneDBBedGFF3_filtered_df$ID[i], ";Name=", 
+      mirgeneDBBedGFF3_filtered_df$ID[i], ";Derives_from=", 
+      precursor_miRNA, sep=""))
+  }
+}
+
+# Exportar el nuevo archivo
+export.gff3(mirgeneDBBedGFF3_filtered_df, 'bge_mirbase.gff3')
