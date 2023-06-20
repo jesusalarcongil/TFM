@@ -1,0 +1,65 @@
+library(scanMiR)
+library(rtracklayer)
+library(dplyr)
+library(stringr)
+library(NLP)
+library(Biostrings)
+library(rtracklayer)
+
+# Preparar las secuencias de los mirna
+isomir2analyze=read.delim("D:/Resultados/isomirna/lista_isomirna_analizar.csv", header=TRUE, sep = ",")
+isomir2analyze = isomir2analyze[,2]
+sequencesMir = data.frame(isomir2analyze)
+completeName = data.frame(isomir2analyze)
+for (i in 1:1:nrow(sequencesMir)){
+  sequencesMir[i,c(1,2,3,4,5,6)] = str_split_fixed(sequencesMir[i,1], "__", 6)
+  sequencesMir[i,6] = gsub("type_","",sequencesMir[i,6])
+  sequencesMir[i,5] = gsub("cat_","",sequencesMir[i,5])
+  sequencesMir[i,3] = gsub("seq_","",sequencesMir[i,3])
+  sequencesMir[i,4] = gsub("start_end_","",sequencesMir[i,4])
+  sequencesMir[i,2] = gsub("mature_","",sequencesMir[i,2])
+  sequencesMir[i,1] = gsub("pre_","",sequencesMir[i,1])
+}
+sequencesMir = sequencesMir[, c(3, 2, 5, 6, 1, 4)]
+colnames(sequencesMir) = c("isomir", "sequence", "category", "type", "precursor", "position")
+sequencesMir = cbind(completeName, sequencesMir)
+rows2remove = c()
+for (i in 1:1:nrow(sequencesMir)){
+  if (grepl(c("loop"), sequencesMir[i,3]) == TRUE) {rows2remove = c(rows2remove, i)}
+  if (grepl(c("pri"), sequencesMir[i,3]) == TRUE) {rows2remove = c(rows2remove, i)}
+  if (grepl(c("moR"), sequencesMir[i,3]) == TRUE) {rows2remove = c(rows2remove, i)}
+}
+sequencesMir = sequencesMir[-rows2remove,]
+
+# Transformar las secuencias a ARN
+for (i in 1:1:nrow(sequencesMir)){
+  secuenciaDNA = unlist(strsplit(sequencesMir[i,2],""))
+  for (x in 1:1:length(secuenciaDNA)){
+    if (secuenciaDNA[x]== "A") {secuenciaDNA[x] = "U"}
+    else if (secuenciaDNA[x]== "T") {secuenciaDNA[x] = "A"}
+    else if (secuenciaDNA[x]== "C") {secuenciaDNA[x] = "G"}
+    else if (secuenciaDNA[x]== "G") {secuenciaDNA[x] = "C"}
+    else if (secuenciaDNA[x]== "a") {secuenciaDNA[x] = "U"}
+    else if (secuenciaDNA[x]== "t") {secuenciaDNA[x] = "A"}
+    else if (secuenciaDNA[x]== "c") {secuenciaDNA[x] = "G"}
+    else if (secuenciaDNA[x]== "g") {secuenciaDNA[x] = "C"}
+  }
+  secuenciaDNA = rev(secuenciaDNA)
+  secuenciaDNA = paste(secuenciaDNA, collapse="")
+  sequencesMir[i,2] = secuenciaDNA
+}
+for (x in 1:1:nrow(sequencesMir)){
+  sequencesMir[x,1] = gsub("\\*","", sequencesMir[x,1])
+}
+
+# Preparar las secuencias de los genes y encontrar las predicciones
+sequencesDNA = readDNAStringSet(file = "D:/TFM/Datos/dnamensajeros.fasta")
+resultsisomirna2mrna = list()
+namesresultsisomirna2mrna = c()
+for (i in 1:1:nrow(sequencesMir)){
+  newResult = findSeedMatches(sequencesDNA,sequencesMir[i,2],
+                              onlyCanonical = TRUE, ret = "data.frame", p3.extra = FALSE)
+  resultsisomirna2mrna = append(resultsisomirna2mrna, list(newResult))
+  namesresultsisomirna2mrna = c(namesresultsisomirna2mrna, sequencesMir[i,1])
+}
+names(resultsisomirna2mrna) = namesresultsisomirna2mrna
